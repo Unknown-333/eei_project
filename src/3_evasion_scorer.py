@@ -57,9 +57,11 @@ from config import (  # noqa: E402
     TOPIC_KEYWORDS,
     cost_estimate,
 )
+from src.perf import CacheStats, measure, profile_to_file  # noqa: E402
 from src.utils import get_logger, read_json, stable_hash, write_json  # noqa: E402
 
 LOG = get_logger("scorer")
+CACHE_STATS = CacheStats()
 
 
 SYSTEM_PROMPT = """You are an expert financial discourse analyst specializing in corporate communication psychology. Your task is to analyze earnings call Q&A exchanges and detect executive evasion — the practice of responding to analyst questions without actually answering them.
@@ -285,9 +287,12 @@ def _load_cached(pair: dict[str, Any], mode: str) -> dict[str, Any] | None:
     p = _cache_key(pair, mode)
     if p.exists():
         try:
-            return read_json(p)
+            payload = read_json(p)
+            CACHE_STATS.hit(module=mode, dollars=cost_estimate(400, 200))
+            return payload
         except Exception:  # noqa: BLE001
             return None
+    CACHE_STATS.miss(module=mode)
     return None
 
 
@@ -435,7 +440,17 @@ def main() -> None:
     ap.add_argument("--mode", choices=["llm", "heuristic"], default="heuristic",
                     help="heuristic = offline rule-based; llm = call Anthropic API")
     ap.add_argument("--limit", type=int, default=None, help="cap number of calls (debug)")
+    ap.add_argument("--clear-cache", action="store_true",
+                    help="wipe the cache directory before scoring")
+    ap.add_argument("--profile", action="store_true",
+                    help="run under cProfile and write outputs/profile.prof + .txt")
     args = ap.parse_args()
+
+    if args.clear_cache:
+        n = 0
+        for p in CACHE_DIR.glob("score_*.json"):
+            p.unlink(); n += 1
+        LOG.info("cleared %d cache files", n)
 
     files = sorted(PROCESSED_DIR.glob("*_qa_pairs.json"))
     if args.limit:
@@ -459,16 +474,24 @@ def main() -> None:
         meter = CostMeter()
 
         async def _run() -> None:
+            from tqdm.asyncio import tqdm as atqdm  # noqa: PLC0415
             for f in tqdm(files, desc="LLM scoring calls"):
                 call = read_json(f)
+                t_call = time.time()
                 scored = await score_call_llm(call, client, sem, meter)
                 row = aggregate_call(call, scored)
                 if row:
                     rows.append(row)
+                LOG.info(
+                    "%s %s — %d pairs in %.2fs (running cost $%.3f)",
+                    call.get("ticker"), call.get("date"),
+                    len(scored), time.time() - t_call, meter.usd,
+                )
             LOG.info(
                 "LLM cost: %d calls, %d in / %d out tokens => $%.2f",
                 meter.n_calls, meter.in_tokens, meter.out_tokens, meter.usd,
             )
+            _ = atqdm  # silence unused import warning if path not exercised
 
         asyncio.run(_run())
     else:
@@ -484,7 +507,20 @@ def main() -> None:
     out_path = OUTPUT_DIR / "eei_scores.csv"
     df.to_csv(out_path, index=False)
     LOG.info("wrote %d call-rows to %s in %.1fs", len(df), out_path, time.time() - t0)
+    LOG.info("%s", CACHE_STATS)
+
+
+def _entrypoint() -> None:
+    if "--profile" in sys.argv:
+        sys.argv.remove("--profile")  # main() also parses; strip the marker
+        prof_path = OUTPUT_DIR / "profile.prof"
+        with measure("scorer-profile") as m:
+            _, txt_path = profile_to_file(main, out_path=prof_path, top_n=20)
+        LOG.info("%s", m)
+        LOG.info("profile stats written to %s and %s", prof_path, txt_path)
+    else:
+        main()
 
 
 if __name__ == "__main__":
-    main()
+    _entrypoint()

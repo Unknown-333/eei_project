@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 import warnings
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -67,27 +68,58 @@ sns.set_theme(style="whitegrid", context="paper")
 # ---------------------------------------------------------------------------
 # Price data
 # ---------------------------------------------------------------------------
-def download_prices(tickers: list[str], force: bool = False) -> pd.DataFrame:
-    """Download adjusted-close prices and cache to ``data/prices/prices.csv``."""
-    cache = PRICES_DIR / "prices.csv"
+def download_prices(
+    tickers: list[str],
+    force: bool = False,
+    max_age_hours: float = 24.0,
+    max_retries: int = 3,
+) -> pd.DataFrame:
+    """Download adjusted-close prices and cache to ``data/prices/prices.parquet``.
+
+    * Single batched yfinance call for all tickers.
+    * Parquet (≈10x smaller than CSV, faster IO).
+    * Refreshed only if older than ``max_age_hours`` or if ``force=True``.
+    * 3 retries with exponential backoff on yfinance failures.
+    """
+    cache = PRICES_DIR / "prices.parquet"
+    legacy = PRICES_DIR / "prices.csv"
     if cache.exists() and not force:
-        df = pd.read_csv(cache, index_col=0, parse_dates=True)
-        missing = [t for t in tickers if t not in df.columns]
-        if not missing:
-            return df
-        LOG.info("price cache missing tickers %s; refetching", missing)
-    LOG.info("downloading prices for %d tickers", len(tickers))
-    raw = yf.download(
-        tickers, start=START_DATE, end=END_DATE,
-        auto_adjust=True, progress=False, group_by="ticker", threads=True,
-    )
-    # yfinance returns either a single-level frame (1 ticker) or multi-level.
+        age_h = (time.time() - cache.stat().st_mtime) / 3600
+        if age_h < max_age_hours:
+            df = pd.read_parquet(cache)
+            missing = [t for t in tickers if t not in df.columns]
+            if not missing:
+                LOG.info("price cache hit (age=%.1fh, %d tickers)", age_h, len(tickers))
+                return df
+            LOG.info("price cache stale on %s; refetching", missing)
+
+    LOG.info("downloading prices for %d tickers in one batch", len(tickers))
+    last_exc: Exception | None = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            raw = yf.download(
+                tickers, start=START_DATE, end=END_DATE,
+                auto_adjust=True, progress=False, group_by="ticker", threads=True,
+            )
+            break
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            LOG.warning("yfinance attempt %d failed: %s", attempt, exc)
+            time.sleep(2 ** attempt)
+    else:
+        raise RuntimeError(f"yfinance failed after {max_retries} attempts: {last_exc}")
+
     if isinstance(raw.columns, pd.MultiIndex):
-        close = pd.DataFrame({t: raw[t]["Close"] for t in tickers if t in raw.columns.levels[0]})
+        avail = set(raw.columns.levels[0])
+        close = pd.DataFrame({t: raw[t]["Close"] for t in tickers if t in avail})
     else:
         close = raw[["Close"]].rename(columns={"Close": tickers[0]})
     close = close.dropna(how="all").sort_index()
-    close.to_csv(cache)
+
+    close.to_parquet(cache)
+    # Keep a CSV mirror for backward compatibility / notebook debugging.
+    close.to_csv(legacy)
+    LOG.info("wrote %s (%.1f KB) and CSV mirror", cache.name, cache.stat().st_size / 1024)
     return close
 
 
