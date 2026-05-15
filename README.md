@@ -1,159 +1,165 @@
 # Executive Evasion Index (EEI)
 
-> _Quantifying corporate communication evasion in earnings calls and turning it into tradable alpha._
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
+[![Tests](https://img.shields.io/badge/tests-74%20passed-success.svg)](#testing)
+[![Coverage](https://img.shields.io/badge/coverage-65%25-yellowgreen.svg)](#testing)
+[![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)](LICENSE)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Built with Anthropic Claude](https://img.shields.io/badge/LLM-Claude%20Opus%204-purple.svg)](https://www.anthropic.com/)
+> **A research system that grades the linguistic evasion of corporate executives on earnings calls and trades the resulting cross-sectional signal in US equities.**
 
 ---
 
-## TL;DR
+## Abstract
 
-The **Executive Evasion Index (EEI)** is an end-to-end alternative-data research
-system that uses a frontier large language model (Anthropic Claude Opus 4) to
-score the _evasiveness_ of executive answers in quarterly earnings call Q&A
-sessions. We then prove this signal generates statistically significant alpha
-when used as the long/short leg of a quintile-rebalanced equity portfolio.
-
-The pipeline scrapes (or synthesizes) raw transcripts → parses structured Q&A
-pairs → scores every exchange across eight psychological evasion tactics →
-aggregates to a per-call EEI → ranks the cross-section → backtests forward
-returns at horizons of T+1, T+5, T+20 and T+60 trading days.
+We extract, score and trade an alternative-data signal — the **Executive Evasion Index (EEI)** — derived from the question-and-answer section of quarterly earnings calls. Each Q&A pair is rated 0 → 1 on a Gricean-cooperation rubric (8 evasive tactics: temporal deflection, legal shielding, competitive shielding, macro deflection, reframing, false precision, etc.) by either an offline rule-based scorer or by Anthropic's Claude under a strict JSON contract. Call-level aggregates feed three flagship signals (`EEI_level`, `EEI_delta`, `Topic-Guidance`) plus four extension factors (executive-confidence proxy, analyst-skepticism, evasion-under-pressure, CEO-vs-CFO gap). Cross-sectional quintile portfolios are back-tested vs. SPY over 2021-2024 across 1, 5, 20 and 60-day horizons.
 
 ## Hypothesis
 
-When executives become evasive, they are usually hiding deteriorating
-fundamentals that have not yet been priced. Three independent literatures
-support this:
+**H₁** — Executives evade more on calls when underlying business conditions are deteriorating; evasion is therefore predictive of forward equity underperformance, with strongest signal at horizons where the information has not yet been priced in (5–60 trading days).
 
-1. **Larcker & Zakolyukina (2012)** — _"Detecting Deceptive Discussions in
-   Conference Calls"_ — show that linguistic markers (hedging, deflection,
-   self-references) in earnings calls predict subsequent restatements and
-   negative returns.
-2. **EvasionBench (2026)** — first public benchmark for LLM-graded evasion in
-   corporate communication; demonstrates that frontier models match human
-   inter-annotator agreement on a Likert evasion scale.
-3. **Paragon Intel (2024)** — buy-side note showing executive-quality scores
-   built from call transcripts deliver IC ≈ 0.04 and a 1.6 Sharpe long/short
-   when rebalanced quarterly.
+**H₂** — *Changes* in evasion (`EEI_delta`) carry more information than the level, because they de-mean each manager's idiosyncratic communication style.
 
-The EEI extends this work by (a) decomposing evasion into _tactics_ (topic
-pivot, false precision, time deflection, legal shield, verbosity shield,
-question reframing, competitive shield, macro deflection), (b) computing
-quarter-over-quarter _deltas_ — which proxy a change in management's
-information posture — and (c) routing every Q&A pair through an explicit
-Gricean-maxim scoring rubric.
+**H₃** — A multi-factor combiner of evasion-derived signals, when sign-corrected and normalised cross-sectionally, produces an information ratio meaningfully above any single factor.
+
+## Headline Results
+
+| Signal              | Horizon | Spearman IC | Notes                              |
+| ------------------- | ------: | ----------: | ---------------------------------- |
+| `EEI_trend`         |    20d  |     +0.153  | strongest single factor            |
+| `EEI_trend`         |    60d  |     +0.125  | persistence at long horizons       |
+| `EEI_delta`         |    60d  |     +0.098  | level-detrended                    |
+| `composite_signal`  |    20d  |     IS Sharpe ≈ 1.46 | scipy-optimized linear combo |
+
+> Numbers above are computed on **synthetic transcripts seeded by deterministic per-ticker evasion profiles**, not on production transcripts. The pipeline accepts real Motley Fool / EDGAR transcripts identically — see `src/1_scraper.py`. All artefacts are reproducible from the committed code: `make run-pipeline`.
 
 ## Architecture
 
 ```
-┌──────────────────────┐     ┌──────────────────────┐     ┌──────────────────────┐
-│  1_scraper.py        │────▶│  2_parser.py         │────▶│  3_evasion_scorer.py │
-│  Motley Fool / SA /  │     │  Q&A pair extractor  │     │  Async Anthropic     │
-│  EDGAR + synthetic   │     │  + linguistic feats  │     │  scoring + caching   │
-│  fallback            │     │  (hedge/deflection)  │     │  + cost telemetry    │
-└──────────┬───────────┘     └──────────┬───────────┘     └──────────┬───────────┘
-           │                            │                            │
-           ▼                            ▼                            ▼
-   data/transcripts/            data/processed/                outputs/
-       *.json                       *_qa_pairs.json              eei_scores.csv
-                                                                       │
-                ┌──────────────────────────────────────────────────────┘
-                ▼
-      ┌──────────────────────┐     ┌──────────────────────┐
-      │  4_backtester.py     │────▶│  5_dashboard.py      │
-      │  yfinance prices     │     │  Streamlit research  │
-      │  quintile L/S        │     │  cockpit (5 pages)   │
-      │  IC / Sharpe / α     │     │                      │
-      └──────────────────────┘     └──────────────────────┘
+┌──────────────┐   ┌──────────────┐   ┌────────────────┐   ┌──────────────┐
+│ 1_scraper.py │ → │ 2_parser.py  │ → │ 3_evasion_     │ → │ 4_backtester │
+│  Motley Fool │   │  QA pairs +  │   │  scorer.py     │   │  yfinance +  │
+│  + EDGAR +   │   │  linguistic  │   │  heuristic OR  │   │  quintiles + │
+│  synthetic   │   │  features    │   │  Anthropic LLM │   │  tear sheet  │
+└──────────────┘   └──────────────┘   └────────────────┘   └──────────────┘
+                                                  │
+                                                  ▼
+                                        ┌──────────────────┐
+                                        │ signals.py       │
+                                        │ 4 factors +      │
+                                        │ scipy combiner   │
+                                        └──────────────────┘
+                                                  │
+                                                  ▼
+                                        ┌──────────────────┐
+                                        │ 5_dashboard.py   │
+                                        │ Streamlit (8     │
+                                        │ pages, PDF/Excel │
+                                        │ export)          │
+                                        └──────────────────┘
 ```
 
-## Setup
+## Methodology
+
+1. **Ingestion** — `src/1_scraper.py` pulls Motley Fool transcripts and EDGAR 8-K filings; falls back to deterministic synthetic transcripts for reproducibility.
+2. **Parsing** — `src/2_parser.py` segments the prepared remarks vs. Q&A halves (regex-based section detection), pairs analyst questions with executive answers using a `Speaker — Firm — Title` header model, and computes cheap linguistic features (hedge counts, deflection keywords, Jaccard overlap, length ratio).
+3. **Scoring** — `src/3_evasion_scorer.py` runs either:
+    - **`--mode heuristic`** — fast, free, deterministic, regex-tactic detectors (`_TIME_DEFLECT_RE`, `_LEGAL_SHIELD_RE`, …) — used by default and in CI;
+    - **`--mode llm`** — Anthropic Claude with a strict JSON contract enforced by a SYSTEM_PROMPT detailing all 8 tactics; concurrency-bounded async client with exponential-backoff retries; results cached as `data/cache/score_<sha1>.json` so re-runs are free.
+4. **Aggregation** — call-level `EEI_raw`, `EEI_weighted` (tier-1 sell-side analyst weighting), per-topic evasion, tactic frequencies, evasion concentration, fully-evasive %, red-flag count.
+5. **Cross-call features** — `EEI_delta` (1Q diff), `EEI_trend` (4Q rolling slope), `evasion_momentum_8q` (8Q slope).
+6. **Extension signals** (`src/signals.py`) — confidence proxy from text prosody, analyst skepticism on questions, evasion-under-pressure, CEO-vs-CFO gap.
+7. **Composite** — `scipy.optimize.minimize` on a sign-corrected linear combo to maximise long-short Sharpe at H=20.
+8. **Back-test** — `src/4_backtester.py` builds quintile-sorted long-short portfolios per quarter; reports Sharpe, max drawdown, alpha/beta vs SPY (statsmodels OLS), Spearman IC.
+9. **Dashboard** — Streamlit with 8 pages: leaderboard, deep-dive, alerts, alpha, raw Q&A explorer, **multi-company comparison, live scoring, PDF/Excel export**.
+
+## Project Structure
+
+```
+eei_project/
+├── config.py                   # constants, tickers, lexicons, paths
+├── src/
+│   ├── 1_scraper.py            # Motley Fool + EDGAR + synthetic
+│   ├── 2_parser.py             # QA pair extraction + linguistic features
+│   ├── 3_evasion_scorer.py     # heuristic + LLM scoring (async, cached)
+│   ├── 4_backtester.py         # yfinance, quintiles, tear sheet
+│   ├── 5_dashboard.py          # Streamlit 8-page cockpit
+│   ├── signals.py              # 4 extension factors + composite
+│   ├── perf.py                 # profiling, memory tracking, cache stats
+│   └── utils.py                # logging, hashing, JSON IO
+├── tests/                      # 74 pytest tests, mocked LLM
+├── notebooks/research_analysis.ipynb   # 11-section quant white paper
+├── outputs/                    # eei_scores.csv, signals_panel.csv, tearsheet.png …
+├── data/
+│   ├── transcripts/            # raw transcript text
+│   ├── processed/              # *_qa_pairs.json
+│   ├── cache/                  # LLM response cache
+│   └── prices/prices.parquet   # cached yfinance close prices
+├── requirements.txt
+├── Makefile                    # install / test / run-pipeline / dashboard / docker-*
+├── Dockerfile + docker-compose.yml
+├── pytest.ini · .coveragerc · .pre-commit-config.yaml
+└── .github/workflows/ci.yml    # pytest + black + flake8
+```
+
+## Quick start
 
 ```powershell
-git clone https://github.com/Unknown-333/eei_project.git
-cd eei_project
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+# 1. Install
+python -m venv .venv ; .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-copy .env.example .env  # then edit and add your ANTHROPIC_API_KEY
-```
 
-## End-to-end run
+# 2. (Optional) set Anthropic key for --mode llm and EEI_DASHBOARD_PASSWORD
+copy .env.example .env
 
-```powershell
-python src/1_scraper.py        # acquire / synthesize transcripts
-python src/2_parser.py         # extract Q&A pairs and linguistic features
-python src/3_evasion_scorer.py # LLM scoring (uses cache; safe to re-run)
-python src/4_backtester.py     # produces outputs/performance_tearsheet.png
+# 3. Run the full offline pipeline (deterministic, no API key required)
+python src/1_scraper.py        # generate / fetch transcripts
+python src/2_parser.py         # extract 2,600+ Q&A pairs
+python src/3_evasion_scorer.py --mode heuristic
+python src/4_backtester.py
+python src/signals.py
+
+# 4. Launch the dashboard
 streamlit run src/5_dashboard.py
 ```
 
-The full notebook walkthrough lives in [notebooks/research_analysis.ipynb](notebooks/research_analysis.ipynb).
+Or simply: `make run-pipeline` then `make dashboard`.
 
-## Results summary (synthetic-data run)
+### Docker
 
-| Metric                         | EEI Level L/S                  | EEI Δ L/S | Topic-Specific (Guidance) |
-| ------------------------------ | ------------------------------ | --------- | ------------------------- |
-| Annualized return              | populated by `4_backtester.py` |           |                           |
-| Annualized Sharpe (rf=4.5%)    |                                |           |                           |
-| Information Coefficient (T+20) |                                |           |                           |
-| Max drawdown                   |                                |           |                           |
-| Hit rate                       |                                |           |                           |
-| Alpha vs SPY (annualized)      |                                |           |                           |
+```bash
+docker compose up --build
+# dashboard available at http://localhost:8501
+```
 
-Run `python src/4_backtester.py` to populate this table — it writes the same
-numbers to `outputs/performance_summary.json`.
+## Testing
 
-## Key findings
+```powershell
+make test          # 74 tests, ~5 s
+make coverage      # HTML report → htmlcov/index.html
+```
 
-- The **EEI Δ signal is materially stronger than the EEI level signal** —
-  consistent with the hypothesis that the _change_ in management's information
-  posture, not the absolute amount of corporate-speak, is what's
-  informationally novel to the market.
-- **Guidance evasion** dominates topic-level predictive power. Margin and
-  capex evasion are secondary. Litigation evasion has the largest tail
-  effect but the lowest base rate.
-- **Verbosity-shielding** and **time-deflection** are the two tactics most
-  associated with subsequent underperformance.
+* 74 unit tests, 1 integration test
+* LLM client fully mocked via `unittest.mock.AsyncMock` — tests never hit the network or burn tokens
+* Coverage gates: `config.py` 100 %, `parser` 79 %, `scorer` 68 %, `backtester` 46 % (CLI orchestrators excluded), `utils` 97 %; `dashboard` excluded by `.coveragerc`
 
 ## Limitations
 
-- LLM scores carry a model-version drift risk. Production use would pin a
-  specific model snapshot and re-score all historical calls when the model
-  is changed.
-- We use the _transcribed_ Q&A only. Audio prosody (pause length, pitch
-  variance, filler-word density) is a strictly richer signal channel.
-- Survivorship bias is partially mitigated by point-in-time tickers but not
-  fully — delisted names from 2021–2024 are out of universe.
-- Synthetic-data mode is for reproducibility only. Production use requires
-  a licensed transcript provider (FactSet StreetAccount, Refinitiv,
-  Sentieo, AlphaSense).
+* **Synthetic-data results are an upper bound.** The deterministic seeded RNG in `src/1_scraper.py` introduces structural correlation between evasion intensity and ticker; live transcripts will produce more diffuse signal. Treat all reported ICs as a methodology validation, not a tradable expectation.
+* **Survivorship + selection bias** — only currently-listed S&P-style tickers are in the universe; no de-listings.
+* **Transaction costs and capacity** are not modelled. Spreads on small-caps would erode the 1-day signal.
+* **LLM scoring is a moving target.** Different model versions (`claude-opus-4-20250514` vs successors) produce different absolute evasion scores; only differences within a single model snapshot are comparable.
+* **No audio.** "Confidence" is a text-only prosody proxy. Real prosody features (pitch variance, speaking rate, hesitation duration) are out of scope.
+* **English-only universe**, US equities only.
 
-## If I had more time / resources
+## Selected references
 
-- **Audio sentiment**: ingest the call audio and add prosodic features
-  (jitter, shimmer, speech rate, response latency). These are
-  uncorrelated-noise to the text channel — should boost ICIR materially.
-- **Real-time pipeline**: stream the live transcript over a websocket from
-  a vendor and emit a rolling EEI per question, so signals are live by the
-  time the call ends rather than T+1.
-- **Cross-asset**: correlate EEI spikes with options skew and CDS spread
-  changes around the call to separate equity-only signal from credit-event
-  warnings.
-- **Speaker diarization across calls**: track an executive across employer
-  changes — does evasion travel with the person or with the company?
-
-## Citations
-
-- Larcker, D. F., & Zakolyukina, A. A. (2012). _Detecting Deceptive
-  Discussions in Conference Calls._ Journal of Accounting Research.
-- EvasionBench Consortium (2026). _EvasionBench: A Benchmark for
-  Evasion Detection in Corporate Communication._
-- Paragon Intel (2024). _Executive Quality as a Cross-Sectional Equity
-  Factor._ Buy-side white paper.
+* H. P. Grice (1975). *Logic and conversation*.
+* Larcker, D. F. & Zakolyukina, A. A. (2012). *Detecting deceptive discussions in conference calls*. Journal of Accounting Research.
+* Loughran, T. & McDonald, B. (2011). *When is a liability not a liability? Textual analysis, dictionaries, and 10-Ks*. Journal of Finance.
+* Tetlock, P. (2007). *Giving content to investor sentiment: the role of media in the stock market*. Journal of Finance.
+* Anthropic (2024). *Claude documentation — structured outputs*.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see `LICENSE`.

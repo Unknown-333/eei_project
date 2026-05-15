@@ -1,0 +1,13 @@
+services:
+  eei:
+    build: .
+    image: eei-project:latest
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./outputs:/app/outputs
+      - ./logs:/app/logs
+    restart: unless-stopped
