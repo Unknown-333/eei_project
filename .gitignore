@@ -25,3 +25,5 @@ outputs/*.png.tmp
 .vscode/
 .idea/
 *.log
+
+pip_out.txt

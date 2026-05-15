@@ -1,6 +1,6 @@
 # Executive Evasion Index (EEI)
 
-> *Quantifying corporate communication evasion in earnings calls and turning it into tradable alpha.*
+> _Quantifying corporate communication evasion in earnings calls and turning it into tradable alpha._
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -12,7 +12,7 @@
 
 The **Executive Evasion Index (EEI)** is an end-to-end alternative-data research
 system that uses a frontier large language model (Anthropic Claude Opus 4) to
-score the *evasiveness* of executive answers in quarterly earnings call Q&A
+score the _evasiveness_ of executive answers in quarterly earnings call Q&A
 sessions. We then prove this signal generates statistically significant alpha
 when used as the long/short leg of a quintile-rebalanced equity portfolio.
 
@@ -27,8 +27,8 @@ When executives become evasive, they are usually hiding deteriorating
 fundamentals that have not yet been priced. Three independent literatures
 support this:
 
-1. **Larcker & Zakolyukina (2012)** — *"Detecting Deceptive Discussions in
-   Conference Calls"* — show that linguistic markers (hedging, deflection,
+1. **Larcker & Zakolyukina (2012)** — _"Detecting Deceptive Discussions in
+   Conference Calls"_ — show that linguistic markers (hedging, deflection,
    self-references) in earnings calls predict subsequent restatements and
    negative returns.
 2. **EvasionBench (2026)** — first public benchmark for LLM-graded evasion in
@@ -38,10 +38,10 @@ support this:
    built from call transcripts deliver IC ≈ 0.04 and a 1.6 Sharpe long/short
    when rebalanced quarterly.
 
-The EEI extends this work by (a) decomposing evasion into *tactics* (topic
+The EEI extends this work by (a) decomposing evasion into _tactics_ (topic
 pivot, false precision, time deflection, legal shield, verbosity shield,
 question reframing, competitive shield, macro deflection), (b) computing
-quarter-over-quarter *deltas* — which proxy a change in management's
+quarter-over-quarter _deltas_ — which proxy a change in management's
 information posture — and (c) routing every Q&A pair through an explicit
 Gricean-maxim scoring rubric.
 
@@ -94,14 +94,14 @@ The full notebook walkthrough lives in [notebooks/research_analysis.ipynb](noteb
 
 ## Results summary (synthetic-data run)
 
-| Metric                            | EEI Level L/S | EEI Δ L/S | Topic-Specific (Guidance) |
-|-----------------------------------|---------------|-----------|---------------------------|
-| Annualized return                 | populated by `4_backtester.py` |           |                           |
-| Annualized Sharpe (rf=4.5%)       |               |           |                           |
-| Information Coefficient (T+20)    |               |           |                           |
-| Max drawdown                      |               |           |                           |
-| Hit rate                          |               |           |                           |
-| Alpha vs SPY (annualized)         |               |           |                           |
+| Metric                         | EEI Level L/S                  | EEI Δ L/S | Topic-Specific (Guidance) |
+| ------------------------------ | ------------------------------ | --------- | ------------------------- |
+| Annualized return              | populated by `4_backtester.py` |           |                           |
+| Annualized Sharpe (rf=4.5%)    |                                |           |                           |
+| Information Coefficient (T+20) |                                |           |                           |
+| Max drawdown                   |                                |           |                           |
+| Hit rate                       |                                |           |                           |
+| Alpha vs SPY (annualized)      |                                |           |                           |
 
 Run `python src/4_backtester.py` to populate this table — it writes the same
 numbers to `outputs/performance_summary.json`.
@@ -109,7 +109,7 @@ numbers to `outputs/performance_summary.json`.
 ## Key findings
 
 - The **EEI Δ signal is materially stronger than the EEI level signal** —
-  consistent with the hypothesis that the *change* in management's information
+  consistent with the hypothesis that the _change_ in management's information
   posture, not the absolute amount of corporate-speak, is what's
   informationally novel to the market.
 - **Guidance evasion** dominates topic-level predictive power. Margin and
@@ -123,7 +123,7 @@ numbers to `outputs/performance_summary.json`.
 - LLM scores carry a model-version drift risk. Production use would pin a
   specific model snapshot and re-score all historical calls when the model
   is changed.
-- We use the *transcribed* Q&A only. Audio prosody (pause length, pitch
+- We use the _transcribed_ Q&A only. Audio prosody (pause length, pitch
   variance, filler-word density) is a strictly richer signal channel.
 - Survivorship bias is partially mitigated by point-in-time tickers but not
   fully — delisted names from 2021–2024 are out of universe.
@@ -147,12 +147,12 @@ numbers to `outputs/performance_summary.json`.
 
 ## Citations
 
-- Larcker, D. F., & Zakolyukina, A. A. (2012). *Detecting Deceptive
-  Discussions in Conference Calls.* Journal of Accounting Research.
-- EvasionBench Consortium (2026). *EvasionBench: A Benchmark for
-  Evasion Detection in Corporate Communication.*
-- Paragon Intel (2024). *Executive Quality as a Cross-Sectional Equity
-  Factor.* Buy-side white paper.
+- Larcker, D. F., & Zakolyukina, A. A. (2012). _Detecting Deceptive
+  Discussions in Conference Calls._ Journal of Accounting Research.
+- EvasionBench Consortium (2026). _EvasionBench: A Benchmark for
+  Evasion Detection in Corporate Communication._
+- Paragon Intel (2024). _Executive Quality as a Cross-Sectional Equity
+  Factor._ Buy-side white paper.
 
 ## License
 
