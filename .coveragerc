@@ -1,0 +1,16 @@
+[run]
+source = src, config
+omit =
+    src/5_dashboard.py
+    tests/*
+    */__init__.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+    raise NotImplementedError
+    if TYPE_CHECKING:
+    @abstractmethod
+show_missing = True
+skip_covered = False
