@@ -1,0 +1,27 @@
+# Environments
+.env
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+
+# Data caches (keep structure, ignore contents)
+data/cache/*
+!data/cache/.gitkeep
+data/prices/*.csv
+data/transcripts/*.json
+!data/transcripts/.gitkeep
+data/processed/*.json
+!data/processed/.gitkeep
+
+# Outputs (keep tracked files we want in repo committed manually)
+outputs/*.png.tmp
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
+*.log
