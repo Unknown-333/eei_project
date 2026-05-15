@@ -29,6 +29,24 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------------------------
+# Optional password gate (set EEI_DASHBOARD_PASSWORD in .env to enable)
+# ---------------------------------------------------------------------------
+import os  # noqa: E402
+
+_PW = os.getenv("EEI_DASHBOARD_PASSWORD")
+if _PW:
+    if not st.session_state.get("_eei_authed"):
+        st.title("🔒 EEI Cockpit — sign in")
+        pw = st.text_input("Password", type="password")
+        if st.button("Sign in"):
+            if pw == _PW:
+                st.session_state["_eei_authed"] = True
+                st.rerun()
+            else:
+                st.error("Incorrect password")
+        st.stop()
+
+# ---------------------------------------------------------------------------
 # Data loaders (cached)
 # ---------------------------------------------------------------------------
 @st.cache_data(show_spinner=False)
@@ -111,6 +129,9 @@ page = st.sidebar.radio(
         "🚩 Red-Flag Alerts",
         "💰 Alpha Dashboard",
         "📊 Raw Q&A Explorer",
+        "⚖️ Compare Companies",
+        "🧪 Live Scoring",
+        "📤 Export Reports",
     ],
 )
 
@@ -355,3 +376,159 @@ elif page == "📊 Raw Q&A Explorer":
     csv = df.to_csv(index=False).encode("utf-8")
     st.download_button("⬇️ Download filtered CSV", data=csv,
                        file_name="eei_qa_pairs_filtered.csv", mime="text/csv")
+
+
+# === D4 extensions appended below ===
+
+# ---------------------------------------------------------------------------
+# Page: Compare Companies (multi-select 2-5 tickers, side-by-side)
+# ---------------------------------------------------------------------------
+if page == "⚖️ Compare Companies":
+    st.title("⚖️ Multi-Company Comparison")
+    universe = sorted(eei["ticker"].unique())
+    chosen = st.multiselect("Pick 2-5 tickers", universe, default=universe[:3], max_selections=5)
+    if len(chosen) < 2:
+        st.info("Select at least 2 tickers."); st.stop()
+    sub = eei[eei["ticker"].isin(chosen)].sort_values("date")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader("EEI over time")
+        fig = px.line(sub, x="date", y="EEI_raw", color="ticker", markers=True)
+        st.plotly_chart(fig, use_container_width=True)
+    with c2:
+        st.subheader("Latest snapshot — radar")
+        latest = sub.sort_values("date").groupby("ticker").tail(1)
+        radar_cols = [c for c in ["EEI_raw", "EEI_weighted", "evasion_concentration",
+                                   "fully_evasive_pct", "red_flag_count"] if c in latest.columns]
+        # Min-max scale for radar.
+        norm = latest[radar_cols].copy()
+        for c in radar_cols:
+            mn, mx = sub[c].min(), sub[c].max()
+            norm[c] = (latest[c] - mn) / (mx - mn + 1e-9)
+        fig = go.Figure()
+        for _, row in norm.assign(ticker=latest["ticker"].values).iterrows():
+            fig.add_trace(go.Scatterpolar(r=[row[c] for c in radar_cols], theta=radar_cols,
+                                          fill="toself", name=row["ticker"]))
+        fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 1])))
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.subheader("Heatmap — EEI by quarter")
+    pivot = sub.pivot_table(index="ticker", columns=sub["date"].dt.to_period("Q").astype(str),
+                            values="EEI_raw", aggfunc="mean")
+    fig = px.imshow(pivot, color_continuous_scale="RdYlGn_r", aspect="auto",
+                    labels=dict(color="EEI"))
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.subheader("Distribution comparison")
+    fig = px.histogram(sub, x="EEI_raw", color="ticker", barmode="overlay", nbins=20,
+                      marginal="box", opacity=0.6)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+# ---------------------------------------------------------------------------
+# Page: Live Scoring (paste a transcript snippet, see EEI in real time)
+# ---------------------------------------------------------------------------
+elif page == "🧪 Live Scoring":
+    st.title("🧪 Live Scoring — paste a Q&A pair")
+    st.caption("Uses the offline rule-based scorer (no API call). For full LLM scoring "
+               "run `python src/3_evasion_scorer.py --mode llm` from the CLI.")
+
+    q = st.text_area("Analyst question", height=100,
+                     placeholder="e.g. Can you walk us through the deceleration in cloud margins?")
+    a = st.text_area("Executive answer", height=200,
+                     placeholder="e.g. Look, broadly speaking we're seeing macro headwinds...")
+    if st.button("Score it") and (q.strip() or a.strip()):
+        # Lazy import to avoid loading the heavy scorer at app startup.
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "scorer_live", str(Path(__file__).resolve().parents[1] / "src" / "3_evasion_scorer.py")
+        )
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["scorer_live"] = mod
+        spec.loader.exec_module(mod)
+        pair = {"question_text": q, "answer_text": a, "question_topics": [], "analyst_firm": ""}
+        result = mod.heuristic_score(pair, company="LIVE", date="now")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Evasion score", f"{result['evasion_score']:.2f}")
+        c2.metric("Level", result["evasion_level"])
+        c3.metric("Red flag", "🚩 yes" if result.get("red_flag") else "no")
+        st.subheader("Detected tactics")
+        tac = result.get("evasion_tactics", {})
+        active = {k: v for k, v in tac.items() if v}
+        if active:
+            st.json(active)
+        else:
+            st.success("No evasive tactics detected.")
+        st.subheader("Rationale")
+        st.write(result.get("rationale", "—"))
+
+
+# ---------------------------------------------------------------------------
+# Page: Export Reports (Excel + PDF tear sheet)
+# ---------------------------------------------------------------------------
+elif page == "📤 Export Reports":
+    st.title("📤 Export Reports")
+
+    st.subheader("Excel — full EEI panel + perf summary")
+    if st.button("Generate Excel workbook"):
+        from io import BytesIO
+        buf = BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as xl:
+            eei.to_excel(xl, sheet_name="EEI Scores", index=False)
+            if not perf.empty:
+                perf.to_excel(xl, sheet_name="Backtest Summary", index=False)
+            sig_path = OUTPUT_DIR / "signals_panel.csv"
+            ic_path = OUTPUT_DIR / "signals_ic.csv"
+            if sig_path.exists():
+                pd.read_csv(sig_path).to_excel(xl, sheet_name="Signals Panel", index=False)
+            if ic_path.exists():
+                pd.read_csv(ic_path).to_excel(xl, sheet_name="Signal IC", index=False)
+        st.download_button("⬇️ Download eei_report.xlsx", data=buf.getvalue(),
+                           file_name="eei_report.xlsx",
+                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    st.subheader("PDF — one-page tear sheet")
+    if st.button("Generate PDF tear sheet"):
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import (
+            SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle,
+        )
+        from reportlab.lib import colors
+        from io import BytesIO
+
+        buf = BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=letter, title="EEI Tear Sheet")
+        styles = getSampleStyleSheet()
+        story = []
+        story.append(Paragraph("Executive Evasion Index — Research Tear Sheet", styles["Title"]))
+        story.append(Spacer(1, 12))
+        story.append(Paragraph(
+            f"Universe: {eei['ticker'].nunique()} tickers · "
+            f"{len(eei)} call-quarters · "
+            f"window {eei['date'].min().date()} → {eei['date'].max().date()}",
+            styles["Normal"],
+        ))
+        story.append(Spacer(1, 12))
+
+        if not perf.empty:
+            data = [perf.columns.tolist()] + perf.head(12).astype(str).values.tolist()
+            tbl = Table(data, hAlign="LEFT")
+            tbl.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                ("FONTSIZE", (0, 0), (-1, -1), 7),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+            ]))
+            story.append(Paragraph("Backtest performance", styles["Heading2"]))
+            story.append(tbl)
+            story.append(Spacer(1, 12))
+
+        ts = OUTPUT_DIR / "tearsheet.png"
+        if ts.exists():
+            story.append(Paragraph("Tear sheet", styles["Heading2"]))
+            story.append(Image(str(ts), width=480, height=320))
+
+        doc.build(story)
+        st.download_button("⬇️ Download eei_tearsheet.pdf", data=buf.getvalue(),
+                           file_name="eei_tearsheet.pdf", mime="application/pdf")
