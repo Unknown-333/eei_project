@@ -4,9 +4,10 @@
 
 I shipped a project I've wanted to build for a long time: the **Executive Evasion Index** — a research system that grades how evasive corporate executives are during the Q&A section of earnings calls and trades the resulting cross-sectional signal in US equities.
 
-Sell-side analysts already read transcripts. Most quants don't *systematically score* the linguistic quality of CEO answers at scale. EEI does.
+Sell-side analysts already read transcripts. Most quants don't _systematically score_ the linguistic quality of CEO answers at scale. EEI does.
 
 The pipeline:
+
 - Pulls 240 earnings-call transcripts (Motley Fool + EDGAR + a deterministic synthetic fallback for reproducibility).
 - Extracts 2,600+ analyst-question / executive-answer pairs.
 - Scores each answer 0 → 1 on a Gricean-cooperation rubric, detecting 8 evasion tactics (temporal deflection, legal shielding, macro deflection, false precision …) — offline heuristic by default, Anthropic Claude with a strict JSON contract for production.

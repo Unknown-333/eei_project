@@ -3,11 +3,11 @@
 This folder contains a small reproducible slice of pipeline output, useful for
 recruiters who want to inspect the project without running the full pipeline.
 
-| File                       | Description                                           |
-| -------------------------- | ----------------------------------------------------- |
-| `sample_transcript.json`   | One synthetic earnings call (AAPL Q4 2020), parsed Q&A |
-| `sample_eei_scores.csv`    | First 5 rows of `outputs/eei_scores.csv` (one call-quarter per row) |
-| `sample_tearsheet.png`     | Long-short quintile back-test tear sheet               |
+| File                     | Description                                                         |
+| ------------------------ | ------------------------------------------------------------------- |
+| `sample_transcript.json` | One synthetic earnings call (AAPL Q4 2020), parsed Q&A              |
+| `sample_eei_scores.csv`  | First 5 rows of `outputs/eei_scores.csv` (one call-quarter per row) |
+| `sample_tearsheet.png`   | Long-short quintile back-test tear sheet                            |
 
 ## How to record a `demo.gif` of the dashboard
 

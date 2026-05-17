@@ -34,16 +34,16 @@ report export.
 
 Three places it could leak in and how each is closed:
 
-* **Signal timestamping** — every `EEI` row is keyed to the *transcript date*,
+- **Signal timestamping** — every `EEI` row is keyed to the _transcript date_,
   i.e. the date the call actually happened. Returns are taken strictly
-  *forward*: at horizon h I take the next trading day after the call as t₀
+  _forward_: at horizon h I take the next trading day after the call as t₀
   and the close at t₀+h as t₁. The `_forward_returns` helper in
   `src/signals.py` does a `searchsorted` on the price index — never an `iloc`
   on a date that could have been adjusted in-sample.
-* **Cross-sectional ranking** — quintile assignment is done *per quarter*,
+- **Cross-sectional ranking** — quintile assignment is done _per quarter_,
   using only data available at that quarter. There is no full-sample
   z-scoring of features.
-* **Composite weights** — the `scipy.optimize` step is currently in-sample;
+- **Composite weights** — the `scipy.optimize` step is currently in-sample;
   the honest next step is a walk-forward fit (re-fit weights every N quarters
   on rolling data). I flag this in the README's Limitations section.
 
@@ -62,6 +62,7 @@ between the two modes — same `aggregate_call`, same per-tactic frequencies —
 which makes the comparison clean.
 
 ## 4. "Your IC of 0.15 looks suspiciously high. Why isn't this just data
+
 mining?"
 
 Two honest answers. First: that number is from synthetic transcripts whose
@@ -87,12 +88,13 @@ coverage. **(b) Real-time scoring** — sub-five-minute latency from call end
 to scored signal, by streaming the live transcript chunks into the async
 scorer instead of batching after the fact. **(c) Universe expansion** —
 extend from 20 megacaps to the full Russell 3000, which mostly means more
-parallel scraping and a smarter cache shard. **(d) Walk-forward validation
-+ regime overlay** — re-fit composite weights on a rolling 24-month window
-and overlay a simple regime filter (VIX bucket, NBER recession flag) so the
-signal is conditional. **(e) Risk model** — neutralise the long-short by
-sector and Barra factors before quintile sorts; the current naked-beta
-version is a research artefact, not a portfolio.
+parallel scraping and a smarter cache shard. \*\*(d) Walk-forward validation
+
+- regime overlay** — re-fit composite weights on a rolling 24-month window
+  and overlay a simple regime filter (VIX bucket, NBER recession flag) so the
+  signal is conditional. **(e) Risk model\*\* — neutralise the long-short by
+  sector and Barra factors before quintile sorts; the current naked-beta
+  version is a research artefact, not a portfolio.
 
 The engineering substrate is already production-shaped: async client with
 backoff and caching, parquet storage, Docker, CI, mocked tests, profile

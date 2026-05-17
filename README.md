@@ -18,18 +18,18 @@ We extract, score and trade an alternative-data signal — the **Executive Evasi
 
 **H₁** — Executives evade more on calls when underlying business conditions are deteriorating; evasion is therefore predictive of forward equity underperformance, with strongest signal at horizons where the information has not yet been priced in (5–60 trading days).
 
-**H₂** — *Changes* in evasion (`EEI_delta`) carry more information than the level, because they de-mean each manager's idiosyncratic communication style.
+**H₂** — _Changes_ in evasion (`EEI_delta`) carry more information than the level, because they de-mean each manager's idiosyncratic communication style.
 
 **H₃** — A multi-factor combiner of evasion-derived signals, when sign-corrected and normalised cross-sectionally, produces an information ratio meaningfully above any single factor.
 
 ## Headline Results
 
-| Signal              | Horizon | Spearman IC | Notes                              |
-| ------------------- | ------: | ----------: | ---------------------------------- |
-| `EEI_trend`         |    20d  |     +0.153  | strongest single factor            |
-| `EEI_trend`         |    60d  |     +0.125  | persistence at long horizons       |
-| `EEI_delta`         |    60d  |     +0.098  | level-detrended                    |
-| `composite_signal`  |    20d  |     IS Sharpe ≈ 1.46 | scipy-optimized linear combo |
+| Signal             | Horizon |      Spearman IC | Notes                        |
+| ------------------ | ------: | ---------------: | ---------------------------- |
+| `EEI_trend`        |     20d |           +0.153 | strongest single factor      |
+| `EEI_trend`        |     60d |           +0.125 | persistence at long horizons |
+| `EEI_delta`        |     60d |           +0.098 | level-detrended              |
+| `composite_signal` |     20d | IS Sharpe ≈ 1.46 | scipy-optimized linear combo |
 
 > Numbers above are computed on **synthetic transcripts seeded by deterministic per-ticker evasion profiles**, not on production transcripts. The pipeline accepts real Motley Fool / EDGAR transcripts identically — see `src/1_scraper.py`. All artefacts are reproducible from the committed code: `make run-pipeline`.
 
@@ -64,8 +64,8 @@ We extract, score and trade an alternative-data signal — the **Executive Evasi
 1. **Ingestion** — `src/1_scraper.py` pulls Motley Fool transcripts and EDGAR 8-K filings; falls back to deterministic synthetic transcripts for reproducibility.
 2. **Parsing** — `src/2_parser.py` segments the prepared remarks vs. Q&A halves (regex-based section detection), pairs analyst questions with executive answers using a `Speaker — Firm — Title` header model, and computes cheap linguistic features (hedge counts, deflection keywords, Jaccard overlap, length ratio).
 3. **Scoring** — `src/3_evasion_scorer.py` runs either:
-    - **`--mode heuristic`** — fast, free, deterministic, regex-tactic detectors (`_TIME_DEFLECT_RE`, `_LEGAL_SHIELD_RE`, …) — used by default and in CI;
-    - **`--mode llm`** — Anthropic Claude with a strict JSON contract enforced by a SYSTEM_PROMPT detailing all 8 tactics; concurrency-bounded async client with exponential-backoff retries; results cached as `data/cache/score_<sha1>.json` so re-runs are free.
+   - **`--mode heuristic`** — fast, free, deterministic, regex-tactic detectors (`_TIME_DEFLECT_RE`, `_LEGAL_SHIELD_RE`, …) — used by default and in CI;
+   - **`--mode llm`** — Anthropic Claude with a strict JSON contract enforced by a SYSTEM*PROMPT detailing all 8 tactics; concurrency-bounded async client with exponential-backoff retries; results cached as `data/cache/score*<sha1>.json` so re-runs are free.
 4. **Aggregation** — call-level `EEI_raw`, `EEI_weighted` (tier-1 sell-side analyst weighting), per-topic evasion, tactic frequencies, evasion concentration, fully-evasive %, red-flag count.
 5. **Cross-call features** — `EEI_delta` (1Q diff), `EEI_trend` (4Q rolling slope), `evasion_momentum_8q` (8Q slope).
 6. **Extension signals** (`src/signals.py`) — confidence proxy from text prosody, analyst skepticism on questions, evasion-under-pressure, CEO-vs-CFO gap.
@@ -139,26 +139,26 @@ make test          # 74 tests, ~5 s
 make coverage      # HTML report → htmlcov/index.html
 ```
 
-* 74 unit tests, 1 integration test
-* LLM client fully mocked via `unittest.mock.AsyncMock` — tests never hit the network or burn tokens
-* Coverage gates: `config.py` 100 %, `parser` 79 %, `scorer` 68 %, `backtester` 46 % (CLI orchestrators excluded), `utils` 97 %; `dashboard` excluded by `.coveragerc`
+- 74 unit tests, 1 integration test
+- LLM client fully mocked via `unittest.mock.AsyncMock` — tests never hit the network or burn tokens
+- Coverage gates: `config.py` 100 %, `parser` 79 %, `scorer` 68 %, `backtester` 46 % (CLI orchestrators excluded), `utils` 97 %; `dashboard` excluded by `.coveragerc`
 
 ## Limitations
 
-* **Synthetic-data results are an upper bound.** The deterministic seeded RNG in `src/1_scraper.py` introduces structural correlation between evasion intensity and ticker; live transcripts will produce more diffuse signal. Treat all reported ICs as a methodology validation, not a tradable expectation.
-* **Survivorship + selection bias** — only currently-listed S&P-style tickers are in the universe; no de-listings.
-* **Transaction costs and capacity** are not modelled. Spreads on small-caps would erode the 1-day signal.
-* **LLM scoring is a moving target.** Different model versions (`claude-opus-4-20250514` vs successors) produce different absolute evasion scores; only differences within a single model snapshot are comparable.
-* **No audio.** "Confidence" is a text-only prosody proxy. Real prosody features (pitch variance, speaking rate, hesitation duration) are out of scope.
-* **English-only universe**, US equities only.
+- **Synthetic-data results are an upper bound.** The deterministic seeded RNG in `src/1_scraper.py` introduces structural correlation between evasion intensity and ticker; live transcripts will produce more diffuse signal. Treat all reported ICs as a methodology validation, not a tradable expectation.
+- **Survivorship + selection bias** — only currently-listed S&P-style tickers are in the universe; no de-listings.
+- **Transaction costs and capacity** are not modelled. Spreads on small-caps would erode the 1-day signal.
+- **LLM scoring is a moving target.** Different model versions (`claude-opus-4-20250514` vs successors) produce different absolute evasion scores; only differences within a single model snapshot are comparable.
+- **No audio.** "Confidence" is a text-only prosody proxy. Real prosody features (pitch variance, speaking rate, hesitation duration) are out of scope.
+- **English-only universe**, US equities only.
 
 ## Selected references
 
-* H. P. Grice (1975). *Logic and conversation*.
-* Larcker, D. F. & Zakolyukina, A. A. (2012). *Detecting deceptive discussions in conference calls*. Journal of Accounting Research.
-* Loughran, T. & McDonald, B. (2011). *When is a liability not a liability? Textual analysis, dictionaries, and 10-Ks*. Journal of Finance.
-* Tetlock, P. (2007). *Giving content to investor sentiment: the role of media in the stock market*. Journal of Finance.
-* Anthropic (2024). *Claude documentation — structured outputs*.
+- H. P. Grice (1975). _Logic and conversation_.
+- Larcker, D. F. & Zakolyukina, A. A. (2012). _Detecting deceptive discussions in conference calls_. Journal of Accounting Research.
+- Loughran, T. & McDonald, B. (2011). _When is a liability not a liability? Textual analysis, dictionaries, and 10-Ks_. Journal of Finance.
+- Tetlock, P. (2007). _Giving content to investor sentiment: the role of media in the stock market_. Journal of Finance.
+- Anthropic (2024). _Claude documentation — structured outputs_.
 
 ## License
 

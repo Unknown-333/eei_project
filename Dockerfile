@@ -7,7 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -19,6 +19,6 @@ EXPOSE 8501
 
 # Default: launch the Streamlit dashboard. Override CMD to run the pipeline.
 CMD ["streamlit", "run", "src/5_dashboard.py", \
-     "--server.address", "0.0.0.0", \
-     "--server.port", "8501", \
-     "--server.headless", "true"]
+    "--server.address", "0.0.0.0", \
+    "--server.port", "8501", \
+    "--server.headless", "true"]
